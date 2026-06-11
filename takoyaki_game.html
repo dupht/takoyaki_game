@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>たこ焼きゲーム</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a0a00;
+    color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  h1 {
+    font-size: 2rem;
+    margin: 16px 0 4px;
+    color: #ffcc44;
+    text-shadow: 0 0 12px #ff8800;
+    letter-spacing: 4px;
+  }
+
+  #hud {
+    display: flex;
+    gap: 32px;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+    background: rgba(255,255,255,0.07);
+    padding: 8px 28px;
+    border-radius: 30px;
+  }
+
+  #hud .label { color: #ffcc88; font-size: 0.8rem; }
+  #hud .val   { font-size: 1.4rem; font-weight: bold; color: #fff; }
+
+  #lives { display: flex; gap: 6px; }
+  .heart { font-size: 1.5rem; transition: transform 0.2s; }
+  .heart.lost { opacity: 0.2; transform: scale(0.8); }
+
+  #hint {
+    font-size: 0.95rem;
+    color: #ffaa44;
+    margin-bottom: 8px;
+    height: 20px;
+  }
+
+  #pan {
+    background: radial-gradient(ellipse at 40% 35%, #555, #222);
+    border: 4px solid #888;
+    border-radius: 50%;
+    width: 520px;
+    height: 520px;
+    position: relative;
+    box-shadow: 0 0 40px rgba(255,120,0,0.4), inset 0 0 60px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  /* 鉄板の穴（くぼみ） */
+  .hole {
+    position: absolute;
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 60%, #0d0d0d 0%, #1e1e1e 55%, #333 100%);
+    box-shadow:
+      inset 0 4px 10px rgba(0,0,0,0.95),
+      inset 0 -2px 4px rgba(255,255,255,0.04),
+      0 1px 3px rgba(255,255,255,0.06);
+    pointer-events: none;
+    z-index: 0;
+    transform: translate(-2px, -2px);
+  }
+
+  .takoyaki {
+    position: absolute;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0;
+    border: 3px solid rgba(0,0,0,0.3);
+    z-index: 1;
+  }
+  .takoyaki:hover { transform: scale(1.08); }
+  .takoyaki:active { transform: scale(0.94); }
+
+  .takoyaki .timer-ring {
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 5px solid transparent;
+    pointer-events: none;
+  }
+
+  /* 色ステージ */
+  .stage-0 { background: radial-gradient(circle at 35% 30%, #f5e8d0, #d4b896); } /* 生 */
+  .stage-1 { background: radial-gradient(circle at 35% 30%, #e8c878, #c8a040); } /* うっすら */
+  .stage-2 { background: radial-gradient(circle at 35% 30%, #c89040, #9a6020); } /* 焼き色 */
+  .stage-3 { background: radial-gradient(circle at 35% 30%, #8b4513, #5a2800); } /* こんがり ★ */
+  .stage-4 { background: radial-gradient(circle at 35% 30%, #3a1a00, #1a0800); } /* 焦げ */
+
+  /* ハイライトのつやつや感 */
+  .takoyaki::before {
+    content: '';
+    position: absolute;
+    top: 12%;
+    left: 18%;
+    width: 30%;
+    height: 25%;
+    background: rgba(255,255,255,0.35);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  /* タイマーリング（残り時間）*/
+  .ring-wrap {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .ring-wrap svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+  .ring-wrap circle {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+  }
+  .ring-bg   { stroke: rgba(255,255,255,0.1); }
+  .ring-fill { stroke: #ffcc44; transition: stroke-dashoffset 0.2s linear, stroke 0.2s; }
+
+  /* ポップアニメ */
+  @keyframes pop {
+    0%   { transform: scale(1.5); opacity:0; }
+    60%  { transform: scale(0.9); opacity:1; }
+    100% { transform: scale(1); opacity:1; }
+  }
+  .appear { animation: pop 0.35s ease forwards; }
+
+  @keyframes success {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.3); box-shadow: 0 0 20px #ffcc00; }
+    100% { transform: scale(0); opacity: 0; }
+  }
+  .done { animation: success 0.4s ease forwards; pointer-events: none; }
+
+  @keyframes burn {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.15) rotate(5deg); }
+    100% { transform: scale(0) rotate(-10deg); opacity:0; }
+  }
+  .burned { animation: burn 0.5s ease forwards; pointer-events: none; }
+
+  @keyframes wrong {
+    0%,100% { transform: translateX(0); }
+    25%      { transform: translateX(-8px); }
+    75%      { transform: translateX(8px); }
+  }
+  .wrong-shake { animation: wrong 0.3s ease; }
+
+  /* スコアポップ */
+  .score-pop {
+    position: absolute;
+    font-size: 1.1rem;
+    font-weight: bold;
+    pointer-events: none;
+    animation: scoreFloat 0.9s ease forwards;
+    z-index: 10;
+    white-space: nowrap;
+  }
+  @keyframes scoreFloat {
+    0%   { opacity:1; transform: translateY(0) scale(1); }
+    100% { opacity:0; transform: translateY(-60px) scale(1.3); }
+  }
+
+  /* コンボ表示 */
+  #combo {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 3rem;
+    font-weight: 900;
+    color: #ffcc00;
+    text-shadow: 0 0 20px #ff8800, 2px 2px 0 #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 100;
+  }
+  @keyframes comboAnim {
+    0%   { opacity:1; transform: translate(-50%,-50%) scale(0.5); }
+    30%  { opacity:1; transform: translate(-50%,-50%) scale(1.3); }
+    70%  { opacity:1; transform: translate(-50%,-50%) scale(1.1); }
+    100% { opacity:0; transform: translate(-50%,-50%) scale(1); }
+  }
+  .combo-show { animation: comboAnim 0.9s ease forwards; }
+
+  /* オーバーレイ */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+  #overlay h2 { font-size: 2.5rem; color: #ffcc44; margin-bottom: 12px; }
+  #overlay .result { font-size: 1.2rem; color: #fff; margin-bottom: 6px; }
+  #overlay button {
+    margin-top: 20px;
+    padding: 14px 48px;
+    font-size: 1.2rem;
+    background: #ff8800;
+    color: #fff;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: transform 0.1s, background 0.2s;
+  }
+  #overlay button:hover { background: #ffaa00; transform: scale(1.05); }
+
+  #target-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(0,0,0,0.4);
+    padding: 6px 18px;
+    border-radius: 20px;
+    margin-bottom: 8px;
+  }
+  #target-indicator span { font-size: 0.9rem; color: #ccc; }
+  #target-color {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #8b4513, #5a2800);
+    border: 3px solid #ffcc44;
+    box-shadow: 0 0 10px rgba(255,204,0,0.6);
+  }
+  .arrow-hint { font-size: 1.3rem; }
+</style>
+</head>
+<body>
+
+<h1>🐙 たこ焼き屋さん</h1>
+
+<div id="hud">
+  <div style="text-align:center">
+    <div class="label">スコア</div>
+    <div class="val" id="score-disp">0</div>
+  </div>
+  <div style="text-align:center">
+    <div class="label">コンボ</div>
+    <div class="val" id="combo-disp">×1</div>
+  </div>
+  <div style="text-align:center">
+    <div class="label">ライフ</div>
+    <div id="lives"></div>
+  </div>
+  <div style="text-align:center">
+    <div class="label">レベル</div>
+    <div class="val" id="level-disp">1</div>
+  </div>
+</div>
+
+<div id="target-indicator">
+  <span>目標</span>
+  <div class="arrow-hint">▶</div>
+  <div id="target-color"></div>
+  <span>こんがり茶色になったらクリック！</span>
+</div>
+
+<div id="hint"></div>
+<div id="pan"></div>
+<div id="combo"></div>
+
+<div id="overlay">
+  <h2 id="overlay-title">🐙 たこ焼き屋さん</h2>
+  <div class="result" id="overlay-msg">こんがり茶色になったたこ焼きをクリックして完成させよう！</div>
+  <div class="result" id="overlay-sub">間違った色でクリックしたり、焦がしたりするとライフが減るよ</div>
+  <div class="result" id="overlay-hiscore" style="color:#ffcc44;margin-top:8px;"></div>
+  <button id="start-btn">ゲームスタート</button>
+</div>
+
+<script>
+// ===== CONFIG =====
+const MAX_LIVES = 5;
+const STAGE_COLORS = ['#d4b896','#c8a040','#9a6020','#5a2800','#1a0800'];
+const STAGE_LABELS = ['生','焼き始め','焼き色','こんがり ✓','焦げ！'];
+const TARGET_STAGE = 3;
+
+// PAN_CX/CY/R はgenerateGridPositions()より先に定義しなければならない
+const PAN_CX = 260, PAN_CY = 260, PAN_R = 210;
+const GRID_POSITIONS = generateGridPositions();
+
+// ===== STATE =====
+let score = 0;
+let lives = MAX_LIVES;
+let combo = 0;
+let level = 1;
+let takoyakis = [];
+let gameRunning = false;
+let spawnTimer, levelTimer;
+let highScore = parseInt(localStorage.getItem('tg_hiscore') || '0');
+let shakePending = false;
+
+// ===== DOM =====
+const pan        = document.getElementById('pan');
+const scoreDisp  = document.getElementById('score-disp');
+const comboDisp  = document.getElementById('combo-disp');
+const livesDisp  = document.getElementById('lives');
+const levelDisp  = document.getElementById('level-disp');
+const hintDisp   = document.getElementById('hint');
+const comboEl    = document.getElementById('combo');
+const overlay    = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayMsg   = document.getElementById('overlay-msg');
+const overlaySub   = document.getElementById('overlay-sub');
+const overlayHi    = document.getElementById('overlay-hiscore');
+const startBtn   = document.getElementById('start-btn');
+
+// ===== GRID =====
+function generateGridPositions() {
+  const positions = [];
+  const rows = 5, cols = 5;
+  const spacing = 90;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = (col - 2) * spacing + PAN_CX;
+      const y = (row - 2) * spacing + PAN_CY;
+      if (Math.sqrt((x-PAN_CX)**2 + (y-PAN_CY)**2) < PAN_R) {
+        const dist = Math.sqrt((x-PAN_CX)**2 + (y-PAN_CY)**2);
+        // speedFactor: center=1.0(fast) → edge≈0.35(slow)
+        const speedFactor = 1.0 - (dist / PAN_R) * 0.65;
+        positions.push({ x: x - 36, y: y - 36, speedFactor });
+      }
+    }
+  }
+  return positions;
+}
+
+function getAvailablePositions() {
+  const used = new Set(takoyakis.map(t => t.posIdx));
+  return GRID_POSITIONS.map((p, i) => ({ ...p, idx: i }))
+    .filter(p => !used.has(p.idx));
+}
+
+// 鉄板の穴を描画（ゲーム開始前から表示）
+function renderHoles() {
+  GRID_POSITIONS.forEach(pos => {
+    const hole = document.createElement('div');
+    hole.className = 'hole';
+    hole.style.left = pos.x + 'px';
+    hole.style.top  = pos.y + 'px';
+    pan.appendChild(hole);
+  });
+}
+
+// ===== GAME =====
+function startGame() {
+  score = 0; lives = MAX_LIVES; combo = 0; level = 1;
+  clearTimeout(spawnTimer);
+  clearInterval(levelTimer);
+  takoyakis.forEach(t => t.el.remove());
+  takoyakis = [];
+  updateHUD();
+  overlay.style.display = 'none';
+  gameRunning = true;
+  // 最初に一気に3〜4個生成して盤面を賑やかに
+  const initCount = 3 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < initCount; i++) spawnTakoyaki();
+  scheduleSpawn();
+  scheduleLevelUp();
+}
+
+function scheduleSpawn() {
+  if (!gameRunning) return;
+  // ランダム間隔（レベルが上がるほど短く）
+  const minDelay = Math.max(300, 1000 - level * 60);
+  const maxDelay = Math.max(700, 2200 - level * 120);
+  const delay = minDelay + Math.random() * (maxDelay - minDelay);
+
+  spawnTimer = setTimeout(() => {
+    if (gameRunning) {
+      // 40%の確率で2個まとめて生成、残りは1個
+      const count = Math.random() < 0.4 ? 2 : 1;
+      for (let i = 0; i < count; i++) spawnTakoyaki();
+      scheduleSpawn();
+    }
+  }, delay);
+}
+
+function scheduleLevelUp() {
+  levelTimer = setInterval(() => {
+    if (!gameRunning) return;
+    level = Math.min(level + 1, 10);
+    updateHUD();
+    showHint(`🔥 レベル ${level} に突入！`, 1500);
+  }, 15000);
+}
+
+function spawnTakoyaki() {
+  const avail = getAvailablePositions();
+  if (avail.length === 0) return;
+  const pos = avail[Math.floor(Math.random() * avail.length)];
+
+  const el = document.createElement('div');
+  el.className = 'takoyaki stage-0 appear';
+
+  // タイマーリング SVG
+  const ringWrap = document.createElement('div');
+  ringWrap.className = 'ring-wrap';
+  const c = 44; // radius
+  const circ = 2 * Math.PI * c;
+  ringWrap.innerHTML = `<svg viewBox="0 0 100 100">
+    <circle class="ring-bg" cx="50" cy="50" r="${c}"/>
+    <circle class="ring-fill" cx="50" cy="50" r="${c}"
+      stroke-dasharray="${circ}" stroke-dashoffset="0"/>
+  </svg>`;
+  el.appendChild(ringWrap);
+
+  el.style.left = pos.x + 'px';
+  el.style.top  = pos.y + 'px';
+  pan.appendChild(el);
+
+  // ステージごとの持続時間（中心ほど速く、レベルで全体短縮）
+  // speedFactor: center=1.0(fast) → edge≈0.35(slow)
+  const sf = pos.speedFactor;
+  function stageDuration(stage) {
+    const base = [0, 3500, 2500, 2500, 2000];
+    const levelFactor = Math.max(1 - (level - 1) * 0.07, 0.4);
+    // 中心(sf=1.0)→ base×levelFactor  /  端(sf=0.35)→ base×levelFactor / 0.35 ≒ 2.8倍
+    return base[stage] * levelFactor / sf;
+  }
+
+  const tk = {
+    el, posIdx: pos.idx,
+    stage: 0,
+    stageStartTime: Date.now(),
+    stageDuration: stageDuration(0),
+    ringFill: ringWrap.querySelector('.ring-fill'),
+    circ,
+    dead: false,
+  };
+  takoyakis.push(tk);
+
+  el.addEventListener('click', () => onClickTakoyaki(tk));
+
+  // アニメーションループ
+  function tick() {
+    if (tk.dead) return;
+    const elapsed = Date.now() - tk.stageStartTime;
+    const progress = Math.min(elapsed / tk.stageDuration, 1);
+
+    // リング更新
+    const offset = tk.circ * (1 - progress);
+    tk.ringFill.style.strokeDashoffset = offset;
+    // リング色：残り少なくなったら赤く
+    tk.ringFill.style.stroke = progress > 0.7 ? '#ff4400' : '#ffcc44';
+
+    if (progress >= 1) {
+      // 次のステージへ
+      if (tk.stage < 4) {
+        tk.stage++;
+        tk.el.className = `takoyaki stage-${tk.stage}`;
+        tk.el.appendChild(ringWrap); // ringを再付加
+        tk.stageStartTime = Date.now();
+        tk.stageDuration = stageDuration(tk.stage);
+        tick();
+      } else {
+        // 焦げた！
+        onBurned(tk);
+        return;
+      }
+    } else {
+      requestAnimationFrame(tick);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+function onClickTakoyaki(tk) {
+  if (tk.dead) return;
+  if (tk.stage === TARGET_STAGE) {
+    // 成功！
+    tk.dead = true;
+    tk.el.classList.add('done');
+    const pts = 100 * (combo + 1);
+    score += pts;
+    combo++;
+    showScorePop(tk.el, `+${pts}`, '#ffcc00');
+    if (combo >= 3) showCombo(combo);
+    setTimeout(() => removeTakoyaki(tk), 400);
+  } else {
+    // ミス
+    tk.el.classList.remove('wrong-shake');
+    void tk.el.offsetWidth;
+    tk.el.classList.add('wrong-shake');
+    loseLife();
+    combo = 0;
+    showHint(`❌ まだ${STAGE_LABELS[tk.stage]}だよ！`, 1200);
+  }
+  updateHUD();
+}
+
+function onBurned(tk) {
+  if (tk.dead) return;
+  tk.dead = true;
+  tk.el.classList.remove(`stage-${tk.stage}`);
+  tk.el.classList.add('stage-4', 'burned');
+  loseLife();
+  combo = 0;
+  showHint('🔥 焦がした！', 1200);
+  setTimeout(() => removeTakoyaki(tk), 500);
+  updateHUD();
+}
+
+function removeTakoyaki(tk) {
+  if (tk.el.parentNode) tk.el.remove();
+  takoyakis = takoyakis.filter(t => t !== tk);
+}
+
+function loseLife() {
+  lives = Math.max(0, lives - 1);
+  updateHUD();
+  // ハートを揺らす
+  const hearts = livesDisp.querySelectorAll('.heart:not(.lost)');
+  if (hearts.length > 0) {
+    const h = hearts[hearts.length - 1];
+    h.classList.add('lost');
+    h.style.animation = 'wrong 0.3s ease';
+  }
+  if (lives <= 0) gameOver();
+}
+
+function gameOver() {
+  gameRunning = false;
+  clearTimeout(spawnTimer);
+  clearInterval(levelTimer);
+  takoyakis.forEach(t => { t.dead = true; if (t.el.parentNode) t.el.remove(); });
+  takoyakis = [];
+
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('tg_hiscore', highScore);
+  }
+
+  overlayTitle.textContent = '🔥 ゲームオーバー';
+  overlayMsg.textContent   = `スコア: ${score.toLocaleString()}点`;
+  overlaySub.textContent   = `到達レベル: ${level}`;
+  overlayHi.textContent    = `🏆 ハイスコア: ${highScore.toLocaleString()}点`;
+  startBtn.textContent     = 'もう一度';
+  overlay.style.display    = 'flex';
+}
+
+// ===== HUD =====
+function updateHUD() {
+  scoreDisp.textContent = score.toLocaleString();
+  comboDisp.textContent = `×${combo + 1}`;
+  levelDisp.textContent = level;
+  livesDisp.innerHTML = '';
+  for (let i = 0; i < MAX_LIVES; i++) {
+    const h = document.createElement('span');
+    h.className = 'heart' + (i >= lives ? ' lost' : '');
+    h.textContent = '🐙';
+    livesDisp.appendChild(h);
+  }
+}
+
+function showHint(msg, ms) {
+  hintDisp.textContent = msg;
+  clearTimeout(showHint._t);
+  showHint._t = setTimeout(() => hintDisp.textContent = '', ms);
+}
+
+function showScorePop(el, text, color) {
+  const rect = el.getBoundingClientRect();
+  const panRect = pan.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'score-pop';
+  pop.style.left  = (rect.left - panRect.left + 20) + 'px';
+  pop.style.top   = (rect.top  - panRect.top  - 10) + 'px';
+  pop.style.color = color;
+  pop.textContent = text;
+  pan.appendChild(pop);
+  setTimeout(() => pop.remove(), 900);
+}
+
+function showCombo(n) {
+  comboEl.textContent = `${n} COMBO! 🔥`;
+  comboEl.classList.remove('combo-show');
+  void comboEl.offsetWidth;
+  comboEl.classList.add('combo-show');
+}
+
+// ===== INIT =====
+renderHoles();
+updateHUD();
+overlayHi.textContent = highScore > 0 ? `🏆 ハイスコア: ${highScore.toLocaleString()}点` : '';
+startBtn.addEventListener('click', startGame);
+</script>
+</body>
+</html>
